@@ -1,0 +1,44 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isMember(roomId) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/rooms/$(roomId)/members/$(request.auth.uid));
+    }
+
+    match /rooms/{roomId} {
+      allow read: if isMember(roomId);
+      // Room creation and membership are only performed by trusted Cloud Functions.
+      allow create, delete: if false;
+      allow update: if isMember(roomId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'rate', 'updatedAt'])
+        && request.resource.data.title is string
+        && request.resource.data.rate is number
+        && request.resource.data.rate > 0;
+
+      match /members/{uid} {
+        allow read: if isMember(roomId);
+        allow write: if false;
+      }
+      match /expenses/{expenseId} {
+        allow read: if isMember(roomId);
+        allow create: if isMember(roomId)
+          && request.resource.data.keys().hasAll(['name','amount','category','payerUid','splitWith','createdBy','createdAt'])
+          && request.resource.data.name is string
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0
+          && request.resource.data.splitWith is list
+          && request.resource.data.splitWith.size() >= 1
+          && request.resource.data.splitWith.size() <= 4
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update: if isMember(roomId)
+          && request.resource.data.createdBy == resource.data.createdBy
+          && request.resource.data.amount is number
+          && request.resource.data.amount > 0;
+        allow delete: if isMember(roomId);
+      }
+      match /private/{document=**} { allow read, write: if false; }
+    }
+  }
+}

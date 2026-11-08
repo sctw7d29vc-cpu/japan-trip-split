@@ -1,0 +1,16 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isMember(roomId) {
+      return request.auth != null &&
+        firestore.exists(/databases/(default)/documents/rooms/$(roomId)/members/$(request.auth.uid));
+    }
+    match /rooms/{roomId}/receipts/{fileName} {
+      allow read: if isMember(roomId);
+      allow create, update: if isMember(roomId)
+        && request.resource.size < 8 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isMember(roomId);
+    }
+  }
+}
